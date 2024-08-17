@@ -59,7 +59,7 @@ impl Guest for ExampleFdw {
         // get sheet id from foreign table options and make the request URL
         let opts = ctx.get_options(OptionsType::Table);
         let spread_sheet_id = opts.require("spread_sheet_id")?;
-        let sheet_id = opts.optional("sheet_id");
+        let sheet_id = opts.get("sheet_id");
         let url = format!("{}/{}/gviz/tq?tqx=out:json", this.base_url, spread_sheet_id,);
 
         let url = match sheet_id {
