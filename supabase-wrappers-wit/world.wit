@@ -1,4 +1,4 @@
-package supabase:wrappers@0.1.0;
+package ruchi:google-spread-sheet-fdw@0.4.0;
 
 world wrappers {
     import http;
