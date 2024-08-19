@@ -1,4 +1,4 @@
-package ruchi:google-spread-sheet-fdw@0.4.0;
+package my-company:example-fdw@0.1.0;
 
 world example {
     import supabase:wrappers/http@0.1.0;
