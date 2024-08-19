@@ -1,13 +1,6 @@
 #[allow(warnings)]
 mod bindings;
-
-use reqwest::{self, header};
-use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
-use reqwest_retry::{policies::ExponentialBackoff, RetryTransientMiddleware};
 use serde_json::Value as JsonValue;
-use tokio::runtime::{Builder, Runtime};
-use yup_oauth2::AccessToken;
-use yup_oauth2::ServiceAccountAuthenticator;
 
 use bindings::{
     exports::supabase::wrappers::routines::Guest,
@@ -18,16 +11,8 @@ use bindings::{
     },
 };
 
-fn get_oauth2_token(sa_key: &str, rt: &Runtime) -> FdwResult<AccessToken> {
-    let creds = yup_oauth2::parse_service_account_key(sa_key.as_bytes())?;
-    let sa = rt.block_on(ServiceAccountAuthenticator::builder(creds).build())?;
-
-    let scopes = &["https://www.googleapis.com/auth/spreadsheets.readonly"];
-    Ok(rt.block_on(sa.token(scopes))?)
-}
-
+#[derive(Debug, Default)]
 struct ExampleFdw {
-    rt: Runtime,
     base_url: String,
     src_rows: Vec<JsonValue>,
     src_idx: usize,
@@ -39,12 +24,7 @@ static mut INSTANCE: *mut ExampleFdw = std::ptr::null_mut::<ExampleFdw>();
 impl ExampleFdw {
     // initialise FDW instance
     fn init_instance() {
-        let instance = Self {
-            rt: Builder::new_current_thread().enable_all().build(),
-            base_url: "".to_owned(),
-            src_rows: Vec::default(),
-            src_idx: 0,
-        };
+        let instance = Self::default();
         unsafe {
             INSTANCE = Box::leak(Box::new(instance));
         }
@@ -76,14 +56,6 @@ impl Guest for ExampleFdw {
     fn begin_scan(ctx: &Context) -> FdwResult {
         let this = Self::this_mut();
 
-        // otherwise, get it from the options or Vault
-        let sa_key = ctx.require("sa_key");
-        let access_token = get_oauth2_token(&sa_key, &this.ret.rt)?;
-        access_token
-            .token()
-            .map(|t| t.to_owned())
-            .ok_or(FdwError::NoTokenFound(access_token))?;
-
         // get sheet id from foreign table options and make the request URL
         let opts = ctx.get_options(OptionsType::Table);
         let spread_sheet_id = opts.require("spread_sheet_id")?;
@@ -98,33 +70,23 @@ impl Guest for ExampleFdw {
             None => format!("{}/{}/gviz/tq?tqx=out:json", this.base_url, spread_sheet_id,),
         };
 
-        let mut headers = header::HeaderMap::new();
-        headers.insert("user-agent", header::HeaderValue::from_static("Sheets FDW"));
-        headers.insert(
-            "x-datasource-auth",
-            header::HeaderValue::from_static("true"),
-        );
-        headers.insert(
-            header::AUTHORIZATION,
-            header::HeaderValue::from_str(&format!("Bearer {}", access_token)).unwrap(),
-        );
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()?;
-        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
-        let client: ClientWithMiddleware = ClientBuilder::new(client)
-            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-            .build();
+        // make up request headers
+        let headers: Vec<(String, String)> = vec![
+            ("user-agent".to_owned(), "Sheets FDW".to_owned()),
+            // header to make JSON response more cleaner
+            ("x-datasource-auth".to_owned(), "true".to_owned()),
+        ];
 
-        // // make a request to Google API and parse response as JSON
-        let body = this.rt.block_on(client.get(&url).send()).and_then(|resp| {
-            resp.error_for_status()
-                .and_then(|resp| this.rt.block_on(resp.text()))
-                .map_err(reqwest_middleware::Error::from)
-        })?;
-
+        // make a request to Google API and parse response as JSON
+        let req = http::Request {
+            method: http::Method::Get,
+            url,
+            headers,
+            body: String::default(),
+        };
+        let resp = http::get(&req)?;
         // remove invalid prefix from response to make a valid JSON string
-        let body: &str = body.strip_prefix(")]}'\n").ok_or("invalid response")?;
+        let body = resp.body.strip_prefix(")]}'\n").ok_or("invalid response")?;
         let resp_json: JsonValue = serde_json::from_str(body).map_err(|e| e.to_string())?;
 
         // extract source rows from response

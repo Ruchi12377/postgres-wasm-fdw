@@ -1,6 +1,6 @@
 [package]
-name = "google_spread_sheet_fdw"
-version = "0.4.0"
+name = "wasm_fdw_example"
+version = "0.2.0"
 edition = "2021"
 
 [lib]
@@ -13,14 +13,9 @@ lto = true
 [dependencies]
 wit-bindgen-rt = "0.26.0"
 serde_json = "1.0"
-yup-oauth2 = "11.0.0"
-reqwest = "0.12.5"
-reqwest-middleware = "0.3.3"
-tokio = { version = "1.39.3", features = ["rt", "net"] }
-reqwest-retry = "0.6.1"
 
 [package.metadata.component]
-package = "ruchi:google-spread-sheet-fdw"
+package = "my-company:example-fdw"
 
 [package.metadata.component.target]
 path = "wit"
